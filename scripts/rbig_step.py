@@ -1,6 +1,7 @@
 import sys
 
 sys.path.append("/home/emmanuel/code/destructive-deep-learning")
+sys.path.insert(0, "/Users/eman/Documents/code_projects/destructive-deep-learning")
 
 from data import get_toy_data
 from visualize import plot_histograms, plot_layer_scores, plot_scatter
@@ -21,6 +22,7 @@ dataset = "classic"
 data = get_toy_data(dataset=dataset, n_samples=n_samples)
 
 save_path = "/home/emmanuel/code/destructive-deep-learning/pics/rbig/"
+save_path = "/Users/eman/Documents/code_projects/destructive-deep-learning/pics/rbig/"
 plot_scatter(data, name=save_path + "raw.png")
 plot_histograms(data, name=save_path + "raw_hist.png")
 
