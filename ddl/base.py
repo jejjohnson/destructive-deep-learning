@@ -7,6 +7,7 @@ from abc import abstractmethod
 from builtins import super
 from copy import deepcopy
 from functools import wraps
+from scipy import stats
 
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin, clone
@@ -15,8 +16,13 @@ from sklearn.utils import check_array, check_random_state
 from sklearn.utils.validation import check_is_fitted
 
 # noinspection PyProtectedMember
-from .utils import (_INF_SPACE, _UNIT_SPACE, check_X_in_interval, get_domain_or_default,
-                    get_support_or_default)
+from .utils import (
+    _INF_SPACE,
+    _UNIT_SPACE,
+    check_X_in_interval,
+    get_domain_or_default,
+    get_support_or_default,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,22 +119,28 @@ def get_n_features(destructor, try_destructor_sample=False):
 
     """
     n_features = np.nan
-    if hasattr(destructor, 'n_features_'):
+    if hasattr(destructor, "n_features_"):
         n_features = destructor.n_features_
-    elif hasattr(destructor, 'density_') and hasattr(destructor.density_, 'n_features_'):
+    elif hasattr(destructor, "density_") and hasattr(
+        destructor.density_, "n_features_"
+    ):
         n_features = destructor.density_.n_features_
-    elif hasattr(destructor, 'density_') and hasattr(destructor.density_, 'sample'):
-        warnings.warn('Because `destructor.n_features_` does not exist and'
-                      ' `destructor.density_.n_features_` does not exist'
-                      ' we attempt to determine the dimension by sampling'
-                      ' from destructor.density_, which may be computationally'
-                      ' demanding.  Add destructor.n_features_ to reduce time if necessary.',
-                      _NumDimWarning)
-        n_features = np.array(destructor.density_.sample(n_samples=1, random_state=0)).shape[1]
+    elif hasattr(destructor, "density_") and hasattr(destructor.density_, "sample"):
+        warnings.warn(
+            "Because `destructor.n_features_` does not exist and"
+            " `destructor.density_.n_features_` does not exist"
+            " we attempt to determine the dimension by sampling"
+            " from destructor.density_, which may be computationally"
+            " demanding.  Add destructor.n_features_ to reduce time if necessary.",
+            _NumDimWarning,
+        )
+        n_features = np.array(
+            destructor.density_.sample(n_samples=1, random_state=0)
+        ).shape[1]
     else:
         if try_destructor_sample:
             # Attempt to sample from destructor
-            if hasattr(destructor, 'sample'):
+            if hasattr(destructor, "sample"):
                 try:
                     n_features = np.array(
                         destructor.sample(n_samples=1, random_state=0)
@@ -141,17 +153,19 @@ def get_n_features(destructor, try_destructor_sample=False):
                 err = True
             if err:
                 raise RuntimeError(
-                    'Could not find n_features in destructor.n_features_, '
-                    'destructor.density_.n_features_, '
-                    'destructor.density_.sample(1).shape[1], or destructor.sample('
-                    '1).shape[1]. '
+                    "Could not find n_features in destructor.n_features_, "
+                    "destructor.density_.n_features_, "
+                    "destructor.density_.sample(1).shape[1], or destructor.sample("
+                    "1).shape[1]. "
                 )
         else:
-            raise RuntimeError('Could not find n_features in destructor or density.'
-                               'Checked destructor.n_features_, destructor.density_.n_features_, '
-                               'and '
-                               ' attempted to sample from destructor.density_ to determine'
-                               ' n_features but failed in all cases.')
+            raise RuntimeError(
+                "Could not find n_features in destructor or density."
+                "Checked destructor.n_features_, destructor.density_.n_features_, "
+                "and "
+                " attempted to sample from destructor.density_ to determine"
+                " n_features but failed in all cases."
+            )
     return n_features
 
 
@@ -304,7 +318,7 @@ class BaseDensityDestructor(BaseEstimator, DestructorMixin):
             return get_support_or_default(self.density_)
 
     def _check_is_fitted(self):
-        check_is_fitted(self, ['density_'])
+        check_is_fitted(self, ["density_"])
 
 
 class IdentityDestructor(BaseDensityDestructor):
@@ -408,8 +422,10 @@ class IdentityDestructor(BaseDensityDestructor):
 
     def _check_dim(self, X):
         if X.shape[1] != self.density_.n_features_:
-            raise ValueError('Dimension of input does not match dimension of the original '
-                             'training data.')
+            raise ValueError(
+                "Dimension of input does not match dimension of the original "
+                "training data."
+            )
 
 
 class UniformDensity(BaseEstimator, ScoreMixin):
@@ -526,7 +542,7 @@ class UniformDensity(BaseEstimator, ScoreMixin):
         return np.array([0, 1])
 
     def _check_is_fitted(self):
-        check_is_fitted(self, ['n_features_'])
+        check_is_fitted(self, ["n_features_"])
 
 
 def create_implicit_density(fitted_destructor, copy=False):
@@ -553,15 +569,13 @@ def create_implicit_density(fitted_destructor, copy=False):
     density : _ImplicitDensity
 
     """
-    return _ImplicitDensity(
-        destructor=fitted_destructor
-    ).fit(None, y=None, copy=copy, transformer_already_fitted=True)
+    return _ImplicitDensity(destructor=fitted_destructor).fit(
+        None, y=None, copy=copy, transformer_already_fitted=True
+    )
 
 
 def get_implicit_density(*args, **kwargs):
-    warnings.warn(DeprecationWarning(
-        'Should use `create_implicit_density` instead'
-    ))
+    warnings.warn(DeprecationWarning("Should use `create_implicit_density` instead"))
     return create_implicit_density(*args, **kwargs)
 
 
@@ -587,9 +601,9 @@ def create_inverse_transformer(fitted_transformer, copy=False):
     transformer : _InverseDestructor
 
     """
-    return _InverseTransformer(
-        transformer=fitted_transformer
-    ).fit(None, y=None, copy=copy, transformer_already_fitted=True)
+    return _InverseTransformer(transformer=fitted_transformer).fit(
+        None, y=None, copy=copy, transformer_already_fitted=True
+    )
 
 
 def create_inverse_canonical_destructor(fitted_canonical_destructor, copy=False):
@@ -626,9 +640,9 @@ def create_inverse_canonical_destructor(fitted_canonical_destructor, copy=False)
 
 
 def get_inverse_canonical_destructor(*args, **kwargs):
-    warnings.warn(DeprecationWarning(
-        'Should use `create_inverse_canonical_destructor` instead'
-    ))
+    warnings.warn(
+        DeprecationWarning("Should use `create_inverse_canonical_destructor` instead")
+    )
     return create_inverse_canonical_destructor(*args, **kwargs)
 
 
@@ -640,7 +654,7 @@ class _InverseTransformer(BaseEstimator, ScoreMixin, TransformerMixin):
         self.output_space = output_space
 
     def _get_transformer(self):
-        check_is_fitted(self, ['fitted_transformer_'])
+        check_is_fitted(self, ["fitted_transformer_"])
         return self.fitted_transformer_
 
     def fit(self, X, y=None, copy=False, transformer_already_fitted=False):
@@ -747,7 +761,7 @@ class _InverseTransformer(BaseEstimator, ScoreMixin, TransformerMixin):
             case.
 
         """
-        if hasattr(self, 'domain_'):
+        if hasattr(self, "domain_"):
             return self.domain_
         else:
             return _INF_SPACE
@@ -765,7 +779,8 @@ class _InverseCanonicalDestructor(_InverseTransformer, DestructorMixin):
     def fit(self, X, y=None, **kwargs):
         super().fit(X, y=y, **kwargs)
         self.density_ = create_implicit_density(
-            self, copy=False)  # Copy has already occurred above if needed
+            self, copy=False
+        )  # Copy has already occurred above if needed
         self.domain_ = _UNIT_SPACE
         return self
 
@@ -792,7 +807,7 @@ class _ImplicitDensity(BaseEstimator, ScoreMixin):
         self.destructor = destructor
 
     def _get_destructor(self):
-        check_is_fitted(self, ['fitted_destructor_'])
+        check_is_fitted(self, ["fitted_destructor_"])
         return self.fitted_destructor_
 
     def fit(self, X, y=None, copy=False, transformer_already_fitted=False):
@@ -840,7 +855,8 @@ class _ImplicitDensity(BaseEstimator, ScoreMixin):
 
         """
         return self._get_destructor().sample(
-            n_samples=n_samples, random_state=random_state)
+            n_samples=n_samples, random_state=random_state
+        )
 
     def score_samples(self, X, y=None):
         """Compute log-likelihood (or log(det(Jacobian))) for each sample.
@@ -885,6 +901,7 @@ def _check_global_random_state(f):
     want to set the random_state for each individual destructor but
     wants exact reproducibility.
     """
+
     @wraps(f)
     def decorated(self, *args, **kwargs):
         """[Placeholder].
@@ -914,6 +931,7 @@ def _check_global_random_state(f):
         ret_val = f(self, *args, **kwargs)
         np.random.set_state(saved_random_state)
         return ret_val
+
     return decorated
 
 
@@ -944,6 +962,9 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
         number generator is the :class:`~numpy.random.RandomState` instance
         used by :mod:`numpy.random`.
 
+    base_dist : str, (default="uniform")
+        the base distribution to score and to sample from.
+
     Attributes
     ----------
     fitted_destructors_ : list
@@ -956,9 +977,10 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
 
     """
 
-    def __init__(self, destructors=None, random_state=None):
+    def __init__(self, destructors=None, random_state=None, base_dist="uniform"):
         self.destructors = destructors
         self.random_state = random_state
+        self.base_dist = base_dist.lower()
 
     def fit(self, X, y=None, **fit_params):
         """Fit estimator to X.
@@ -1014,7 +1036,7 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
             Z = self._single_fit_transform(d, Z, y)
             destructors.append(d)
             if np.any(np.isnan(Z)):
-                raise RuntimeError('Need to check')
+                raise RuntimeError("Need to check")
 
         self.fitted_destructors_ = np.array(destructors)
         self.density_ = create_implicit_density(self)
@@ -1124,8 +1146,13 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
         self._check_is_fitted()
         rng = check_random_state(random_state)
         n_features = get_n_features(self.fitted_destructors_[-1])
-        U = rng.rand(n_samples, n_features)
-        X = self.inverse_transform(U, y)
+        if self.base_dist == "uniform":
+            Z = rng.rand(n_samples, n_features)
+        elif self.base_dist == "gaussian":
+            Z = rng.randn(n_samples, n_features)
+        else:
+            raise ValueError(f"Unrecognized base distribution: {self.base_dist}")
+        X = self.inverse_transform(Z, y)
         return X
 
     def score_samples(self, X, y=None, partial_idx=None):
@@ -1152,7 +1179,18 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
             Log likelihood of each data point in X.
 
         """
-        return np.sum(self.score_samples_layers(X, y, partial_idx=partial_idx), axis=1)
+        if self.base_dist == "uniform":
+            return np.sum(
+                self.score_samples_layers(X, y, partial_idx=partial_idx), axis=1
+            )
+        else:
+            return -(
+                stats.norm.logpdf(X).sum(axis=1)
+                + np.sum(
+                    self.score_samples_layers(X, y, partial_idx=partial_idx),
+                    axis=1,
+                )
+            )
 
     def score_samples_layers(self, X, y=None, partial_idx=None):
         """[Placeholder].
@@ -1216,10 +1254,12 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
         elif isinstance(self.destructors, (list, tuple, np.array)):
             return [clone(d) for d in self.destructors]
         else:
-            raise ValueError('`destructors` must be a list, tuple or numpy array. Sets are not '
-                             'allowed because order is important and general iterators/generators '
-                             'are not allowed because we need the estimator parameters to stay '
-                             'constant after inspecting.')
+            raise ValueError(
+                "`destructors` must be a list, tuple or numpy array. Sets are not "
+                "allowed because order is important and general iterators/generators "
+                "are not allowed because we need the estimator parameters to stay "
+                "constant after inspecting."
+            )
 
     def _check_is_fitted(self):
-        check_is_fitted(self, ['fitted_destructors_'])
+        check_is_fitted(self, ["fitted_destructors_"])

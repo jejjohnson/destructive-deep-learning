@@ -1,0 +1,19 @@
+name: pyddd
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.8
+  - numpy
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - cython
+  - ipykernel
+  - pip
+  - pip:
+    - black
+    - pytest
+    - mypy
+    - isort
+    - flake

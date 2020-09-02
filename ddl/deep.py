@@ -12,8 +12,12 @@ from sklearn.model_selection import check_cv
 from sklearn.utils.validation import check_array, check_X_y
 
 # noinspection PyProtectedMember
-from .base import (CompositeDestructor, IdentityDestructor, _check_global_random_state,
-                   create_implicit_density)
+from .base import (
+    CompositeDestructor,
+    IdentityDestructor,
+    _check_global_random_state,
+    create_implicit_density,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,13 +86,20 @@ class DeepDestructor(CompositeDestructor):
     """
 
     # noinspection PyMissingConstructor
-    def __init__(self, canonical_destructor=None, init_destructor=None,
-                 n_canonical_destructors=1, random_state=None):
+    def __init__(
+        self,
+        canonical_destructor=None,
+        init_destructor=None,
+        n_canonical_destructors=1,
+        random_state=None,
+        base_dist="uniform",
+    ):
 
         self.canonical_destructor = canonical_destructor
         self.init_destructor = init_destructor
         self.n_canonical_destructors = n_canonical_destructors
         self.random_state = random_state
+        self.base_dist = base_dist
 
     def _get_canonical_destructors(self):
         """Get canonical destructors as list and handle single case.
@@ -109,8 +120,11 @@ class DeepDestructor(CompositeDestructor):
         destructors = []
         if self.init_destructor is not None:
             destructors.append(self.init_destructor)
-        destructors.extend(_take(cycle(self._get_canonical_destructors()),
-                                 self.n_canonical_destructors))
+        destructors.extend(
+            _take(
+                cycle(self._get_canonical_destructors()), self.n_canonical_destructors
+            )
+        )
         return np.array([clone(d) for d in destructors])
 
 
@@ -210,9 +224,20 @@ class DeepDestructorCV(DeepDestructor):
     """
 
     # noinspection PyMissingConstructor
-    def __init__(self, canonical_destructor=None, init_destructor=None, cv=None, stop_tol=1e-3,
-                 max_canonical_destructors=None, n_extend=1, refit=True, silent=False,
-                 log_prefix='', random_state=None):
+    def __init__(
+        self,
+        canonical_destructor=None,
+        init_destructor=None,
+        cv=None,
+        stop_tol=1e-3,
+        max_canonical_destructors=None,
+        n_extend=1,
+        refit=True,
+        silent=False,
+        log_prefix="",
+        random_state=None,
+        base_dist="uniform",
+    ):
         self.canonical_destructor = canonical_destructor
         self.init_destructor = init_destructor
         self.cv = cv
@@ -223,6 +248,7 @@ class DeepDestructorCV(DeepDestructor):
         self.log_prefix = log_prefix
         self.refit = refit
         self.random_state = random_state
+        self.base_dist = base_dist
 
     @_check_global_random_state
     def fit(self, X, y=None, X_test=None, first_score_zero=False, **fit_params):
@@ -245,7 +271,7 @@ class DeepDestructorCV(DeepDestructor):
         """
         # Setup parameters
         if self.n_extend < 1:
-            raise ValueError('n_extend should be greater than or equal to 1')
+            raise ValueError("n_extend should be greater than or equal to 1")
         if y is not None:
             X, y = check_X_y(X, y)
         else:
@@ -257,36 +283,57 @@ class DeepDestructorCV(DeepDestructor):
         cv_destructors_arr = [[] for _ in splits]
         scores_arr = [[] for _ in splits]
         cv_destructors_arr, scores_arr, splits = self._fit_cv_destructors(
-            X, y, cv_destructors_arr, scores_arr, splits, X_test=X_test,
-            first_score_zero=first_score_zero)
+            X,
+            y,
+            cv_destructors_arr,
+            scores_arr,
+            splits,
+            X_test=X_test,
+            first_score_zero=first_score_zero,
+        )
 
         # Add layers as needed up to max # of layers of all splits
         if not self.silent:
-            logger.debug(self.log_prefix + 'Fitting extra needed layers')
-        best_n_layers_over_folds = np.max([
-            len(cv_destructors) for cv_destructors in cv_destructors_arr])
+            logger.debug(self.log_prefix + "Fitting extra needed layers")
+        best_n_layers_over_folds = np.max(
+            [len(cv_destructors) for cv_destructors in cv_destructors_arr]
+        )
         cv_destructors_arr, scores_arr, splits = self._fit_cv_destructors(
-            X, y, cv_destructors_arr, scores_arr, splits, X_test=X_test,
+            X,
+            y,
+            cv_destructors_arr,
+            scores_arr,
+            splits,
+            X_test=X_test,
             selected_n_layers=best_n_layers_over_folds,
-            first_score_zero=first_score_zero)
+            first_score_zero=first_score_zero,
+        )
 
         # Determine best number of layers
         scores_mat = np.array(scores_arr)
-        if np.any(scores_mat.shape != np.array([len(splits), best_n_layers_over_folds, 2])):
-            raise RuntimeError('scores_mat does not seem to be the correct shape')
+        if np.any(
+            scores_mat.shape != np.array([len(splits), best_n_layers_over_folds, 2])
+        ):
+            raise RuntimeError("scores_mat does not seem to be the correct shape")
         scores_avg = np.mean(scores_mat, axis=0)  # Average over different splits
         best_n_layers = int(
-            1 + np.argmax(scores_avg[:, 1].ravel()))  # Best over cumulative test_score
+            1 + np.argmax(scores_avg[:, 1].ravel())
+        )  # Best over cumulative test_score
         best_score = np.max(scores_avg[:, 1].ravel())
 
         # Final fitting with best # of layers
         if self.refit:
             if not self.silent:
-                logger.debug(self.log_prefix + 'Fitting final model with %d layers with score=%g'
-                             % (best_n_layers, best_score))
+                logger.debug(
+                    self.log_prefix
+                    + "Fitting final model with %d layers with score=%g"
+                    % (best_n_layers, best_score)
+                )
             destructors = []
             Z = X.copy()
-            for i, d in enumerate(islice(iter(self._get_destructor_iterable()), best_n_layers)):
+            for i, d in enumerate(
+                islice(iter(self._get_destructor_iterable()), best_n_layers)
+            ):
                 d.fit(Z, y)
                 score = d.score(Z, y)
                 if first_score_zero:
@@ -294,13 +341,17 @@ class DeepDestructorCV(DeepDestructor):
                 Z = d.transform(Z, y)
                 destructors.append(d)
                 if not self.silent:
-                    logger.debug(self.log_prefix + '(Final fit layer=%d) local layer score=%g'
-                                 % (i + 1, score))
+                    logger.debug(
+                        self.log_prefix
+                        + "(Final fit layer=%d) local layer score=%g" % (i + 1, score)
+                    )
         else:
             # Use already fitted destructor from CV array
             if len(cv_destructors_arr) > 1:
-                warnings.warn('refit=False but len(cv_destructors_arr) > 1 so just using fitted '
-                              'destructors from the first split.')
+                warnings.warn(
+                    "refit=False but len(cv_destructors_arr) > 1 so just using fitted "
+                    "destructors from the first split."
+                )
             destructors = np.array(cv_destructors_arr[0])[:best_n_layers]
 
         self.fitted_destructors_ = np.array(destructors)
@@ -334,11 +385,22 @@ class DeepDestructorCV(DeepDestructor):
         self.fit(X, y, **fit_params)
         return self.transform(X, y)
 
-    def _fit_cv_destructors(self, X, y, cv_destructors_arr, scores_arr, splits, X_test=None,
-                            y_test=None, selected_n_layers=None, first_score_zero=False):
+    def _fit_cv_destructors(
+        self,
+        X,
+        y,
+        cv_destructors_arr,
+        scores_arr,
+        splits,
+        X_test=None,
+        y_test=None,
+        selected_n_layers=None,
+        first_score_zero=False,
+    ):
         compute_test = X_test is not None
         for i, (cv_destructors, scores, (train, validation)) in enumerate(
-                zip(cv_destructors_arr, scores_arr, splits)):
+            zip(cv_destructors_arr, scores_arr, splits)
+        ):
             Z_train = X[train, :].copy()
             Z_validation = X[validation, :].copy()
             if y is not None:
@@ -355,15 +417,23 @@ class DeepDestructorCV(DeepDestructor):
 
             # If some destructors are already fit
             destructor_iterator = iter(self._get_destructor_iterable())
-            if selected_n_layers is not None and len(cv_destructors) == selected_n_layers:
+            if (
+                selected_n_layers is not None
+                and len(cv_destructors) == selected_n_layers
+            ):
                 # Don't need to fit any more destructors
                 if not self.silent:
-                    logger.debug(self.log_prefix + 'Already done fitting cv=%i deep destructor' % i)
+                    logger.debug(
+                        self.log_prefix
+                        + "Already done fitting cv=%i deep destructor" % i
+                    )
                 continue
             elif len(cv_destructors) > 0:
                 if not self.silent:
-                    logger.debug(self.log_prefix
-                                 + 'Re-fitting extra destructors for cv=%i deep destructor' % i)
+                    logger.debug(
+                        self.log_prefix
+                        + "Re-fitting extra destructors for cv=%i deep destructor" % i
+                    )
                 # Pop off destructors that were already fit from the destructor iterator
                 _consume(destructor_iterator, len(cv_destructors))
                 for d in cv_destructors:
@@ -393,13 +463,24 @@ class DeepDestructorCV(DeepDestructor):
                         test_score = 0
                     Z_test = destructor.transform(Z_test, y_test)
                     cum_test_score += test_score
-                    test_score_str = ' test=%g, cum_test=%g' % (test_score, cum_test_score)
+                    test_score_str = " test=%g, cum_test=%g" % (
+                        test_score,
+                        cum_test_score,
+                    )
                 else:
-                    test_score_str = ''
+                    test_score_str = ""
                 if not self.silent:
-                    logger.debug(self.log_prefix + '(CV sp=%d, L=%d) Scores: train=%g val=%g%s'
-                                 % (i + 1, len(cv_destructors) + 1, train_score, validation_score,
-                                    test_score_str))
+                    logger.debug(
+                        self.log_prefix
+                        + "(CV sp=%d, L=%d) Scores: train=%g val=%g%s"
+                        % (
+                            i + 1,
+                            len(cv_destructors) + 1,
+                            train_score,
+                            validation_score,
+                            test_score_str,
+                        )
+                    )
 
                 # Update cv_destructors
                 cv_destructors.append(destructor)
@@ -429,15 +510,21 @@ class DeepDestructorCV(DeepDestructor):
                     # If we have n_extend + 1 layers then check cumulative scores
                     if len(cv_destructors) > self.n_extend:
                         cur_score = scores[-1][1]
-                        max_previous_scores = np.max([sc[1] for sc in scores[:-self.n_extend]])
+                        max_previous_scores = np.max(
+                            [sc[1] for sc in scores[: -self.n_extend]]
+                        )
                         if max_previous_scores == 0:
                             rel_diff = cur_score - max_previous_scores
                         else:
                             rel_diff = (cur_score - max_previous_scores) / np.abs(
-                                max_previous_scores)
+                                max_previous_scores
+                            )
                         if not self.silent:
-                            logger.debug(self.log_prefix + '(CV sp=%d, L=%d) Relative diff=%g'
-                                         % (i + 1, len(cv_destructors), rel_diff))
+                            logger.debug(
+                                self.log_prefix
+                                + "(CV sp=%d, L=%d) Relative diff=%g"
+                                % (i + 1, len(cv_destructors), rel_diff)
+                            )
                         if rel_diff < self.stop_tol:
                             # If the most recent cumulative score is less than the max score of much
                             # everything except the last n_extend layers, then stop
@@ -447,6 +534,7 @@ class DeepDestructorCV(DeepDestructor):
 
     def _get_destructor_iterable(self):
         """Yield an infinite sequence of destructors."""
+
         def _destructor_generator():
             if self.init_destructor is not None:
                 yield clone(self.init_destructor)
