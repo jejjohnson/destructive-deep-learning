@@ -935,7 +935,7 @@ def _check_global_random_state(f):
     return decorated
 
 
-class CompositeDestructor(BaseEstimator, DestructorMixin):
+class CompositeDestructorIT(BaseEstimator, DestructorMixin):
     """Meta destructor composed of multiple destructors.
 
     This meta destructor composes multiple destructors or other
@@ -1035,6 +1035,337 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
         for d in self._get_destructor_iterable():
             Z = self._single_fit_transform(d, Z, y)
             destructors.append(d)
+            if np.any(np.isnan(Z)):
+                raise RuntimeError("Need to check")
+
+        self.fitted_destructors_ = np.array(destructors)
+        self.density_ = create_implicit_density(self)
+        return Z
+
+    @classmethod
+    def create_fitted(cls, fitted_destructors, **kwargs):
+        """Create fitted destructor.
+
+        Parameters
+        ----------
+        fitted_destructors : array-like of Destructor
+            Fitted destructors.
+
+        **kwargs
+            Other parameters to pass to constructor.
+
+        Returns
+        -------
+        fitted_transformer : Transformer
+            Fitted transformer.
+
+        """
+        destructor = cls(**kwargs)
+        destructor.fitted_destructors_ = np.array(fitted_destructors)
+        destructor.density_ = create_implicit_density(destructor)
+        return destructor
+
+    def _single_fit_transform(self, d, Z, y):
+        if y is not None:
+            pass
+            # warnings.warn('y is not None but this is not an adversarial composite/deep'
+            #               'destructor. '
+            #               'Did you mean to use an adversarial version of this destructor?')
+        return d.fit(Z, y).transform(Z, y)
+
+    def transform(self, X, y=None, partial_idx=None):
+        """Apply destructive transformation to X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            New data, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        y : None, default=None
+            Not used in the transformation but kept for compatibility.
+
+        partial_idx : list or None, default=None
+            List of indices of the fitted destructor to use in
+            the transformation. The default of None uses all
+            the fitted destructors. Mainly used for visualization
+            or debugging.
+
+        Returns
+        -------
+        X_new : array-like, shape (n_samples, n_features)
+            Transformed data (possibly only partial transformation).
+
+        """
+        self._check_is_fitted()
+        Z = check_array(X, copy=True)
+
+        fitted_destructors = self._get_partial_destructors(partial_idx)
+        for d in fitted_destructors:
+            Z = d.transform(Z, y)
+        return Z
+
+    def inverse_transform(self, X, y=None, partial_idx=None):
+        """Apply inverse destructive transformation to X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            New data, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        y : None, default=None
+            Not used in the transformation but kept for compatibility.
+
+        partial_idx : list or None, default=None
+            List of indices of the fitted destructor to use in
+            the transformation. The default of None uses all
+            the fitted destructors. Mainly used for visualization
+            or debugging.
+
+        Returns
+        -------
+        X_new : array-like, shape (n_samples, n_features)
+            Transformed data (possibly only partial transformation).
+
+        """
+        self._check_is_fitted()
+        Z = check_array(X, copy=True)
+
+        fitted_destructors = self._get_partial_destructors(partial_idx)
+        for d in reversed(fitted_destructors):
+            Z = d.inverse_transform(Z, y)
+        return Z
+
+    def sample(self, n_samples=1, y=None, random_state=None):
+        """Sample from composite destructor.
+
+        Nearly the same as ``DestructorMixin.sample`` but the number of
+        features is found from first fitted destructor to avoid recursion.
+        """
+        self._check_is_fitted()
+        rng = check_random_state(random_state)
+        n_features = get_n_features(self.fitted_destructors_[-1])
+        if self.base_dist == "uniform":
+            Z = rng.rand(n_samples, n_features)
+        elif self.base_dist == "gaussian":
+            Z = rng.randn(n_samples, n_features)
+        else:
+            raise ValueError(f"Unrecognized base distribution: {self.base_dist}")
+        X = self.inverse_transform(Z, y)
+        return X
+
+    def score_samples(self, X, y=None, partial_idx=None):
+        """Compute log-likelihood (or log(det(Jacobian))) for each sample.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            New data, where n_samples is the number of samples and n_features
+            is the number of features.
+
+        y : None, default=None
+            Not used but kept for compatibility.
+
+        partial_idx : list or None, default=None
+            List of indices of the fitted destructor to use in
+            the computing the log likelihood. The default of None uses all
+            the fitted destructors. Mainly used for visualization
+            or debugging.
+
+        Returns
+        -------
+        log_likelihood : array, shape (n_samples,)
+            Log likelihood of each data point in X.
+
+        """
+        if self.base_dist == "uniform":
+            return np.sum(
+                self.score_samples_layers(X, y, partial_idx=partial_idx), axis=1
+            )
+        else:
+            return -(
+                stats.norm.logpdf(X).sum(axis=1)
+                + np.sum(
+                    self.score_samples_layers(X, y, partial_idx=partial_idx),
+                    axis=1,
+                )
+            )
+
+    def score_samples_layers(self, X, y=None, partial_idx=None):
+        """[Placeholder].
+
+        Parameters
+        ----------
+        X :
+        y :
+        partial_idx :
+
+        Returns
+        -------
+        obj : object
+
+        """
+        self._check_is_fitted()
+        X = check_array(X, copy=True)
+
+        fitted_destructors = self._get_partial_destructors(partial_idx)
+        log_likelihood_layers = np.zeros((X.shape[0], len(fitted_destructors)))
+        for i, d in enumerate(fitted_destructors):
+            log_likelihood_layers[:, i] = d.score_samples(X, y)
+            # Don't transform for the last destructor
+            if i < len(fitted_destructors) - 1:
+                X = d.transform(X, y)
+        return log_likelihood_layers
+
+    def score(self, X, y=None, partial_idx=None):
+        """Override super class to allow for partial_idx."""
+        return np.mean(self.score_samples(X, y, partial_idx=partial_idx))
+
+    def score_layers(self, X, y=None, partial_idx=None):
+        """Override super class to allow for partial_idx."""
+        return np.mean(self.score_samples_layers(X, y, partial_idx=partial_idx), axis=0)
+
+    def get_domain(self):
+        """Get the domain of this destructor.
+
+        Returns
+        -------
+        domain : array-like, shape (2,) or shape (n_features, 2)
+            If shape is (2, ), then ``domain[0]`` is the minimum and
+            ``domain[1]`` is the maximum for all features. If shape is
+            (`n_features`, 2), then each feature's domain (which could
+            be different for each feature) is given similar to the first
+            case.
+
+        """
+        # Get the domain of the first destructor (or relative destructor like LinearProjector)
+        return next(iter(self._get_destructor_iterable())).get_domain()
+
+    def _get_partial_destructors(self, partial_idx):
+        if partial_idx is not None:
+            return np.array(self.fitted_destructors_)[partial_idx]
+        else:
+            return self.fitted_destructors_
+
+    def _get_destructor_iterable(self):
+        if self.destructors is None:
+            return [IdentityDestructor()]
+        elif isinstance(self.destructors, (list, tuple, np.array)):
+            return [clone(d) for d in self.destructors]
+        else:
+            raise ValueError(
+                "`destructors` must be a list, tuple or numpy array. Sets are not "
+                "allowed because order is important and general iterators/generators "
+                "are not allowed because we need the estimator parameters to stay "
+                "constant after inspecting."
+            )
+
+    def _check_is_fitted(self):
+        check_is_fitted(self, ["fitted_destructors_"])
+
+
+class CompositeDestructor(BaseEstimator, DestructorMixin):
+    """Meta destructor composed of multiple destructors.
+
+    This meta destructor composes multiple destructors or other
+    transformations (e.g. relative destructors like LinearProjector)
+    into a single composite destructor. This is a fundamental building
+    block for creating more complex destructors from simple atomic
+    destructors.
+
+    Parameters
+    ----------
+    destructors : list
+        List of destructor estimators to use as subdestructors.
+
+    random_state : int, RandomState instance or None, optional (default=None)
+        Global random state used if any of the subdestructors are
+        random-based. By seeding the global :mod:`numpy.random`` via
+        `random_state` and then resetting to its previous state,
+        we can avoid having to carefully pass around random states for
+        random-based sub destructors.
+
+        If int, `random_state` is the seed used by the random number
+        generator; If :class:`~numpy.random.RandomState` instance,
+        `random_state` is the random number generator; If None, the random
+        number generator is the :class:`~numpy.random.RandomState` instance
+        used by :mod:`numpy.random`.
+
+    base_dist : str, (default="uniform")
+        the base distribution to score and to sample from.
+
+    Attributes
+    ----------
+    fitted_destructors_ : list
+        List of fitted (sub)destructors. (Note that these objects are cloned
+        via ``sklearn.base.clone`` from the ``destructors`` parameter so as
+        to avoid mutating the ``destructors`` parameter.)
+
+    density_ : estimator
+        *Implicit* density of composite destructor.
+
+    """
+
+    def __init__(self, destructors=None, random_state=None, base_dist="uniform"):
+        self.destructors = destructors
+        self.random_state = random_state
+        self.base_dist = base_dist.lower()
+
+    def fit(self, X, y=None, **fit_params):
+        """Fit estimator to X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Training data, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        y : None, default=None
+            Not used in the fitting process but kept for compatibility.
+
+        fit_params : dict, optional
+            Optional extra fit parameters.
+
+        Returns
+        -------
+        self : estimator
+            Returns the instance itself.
+
+        """
+        self.fit_transform(X, y, **fit_params)
+        return self
+
+    @_check_global_random_state
+    def fit_transform(self, X, y=None, **fit_params):
+        """Fit estimator to X and then transform X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Training data, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        y : None, default=None
+            Not used in the fitting process but kept for compatibility.
+
+        fit_params : dict, optional
+            Parameters to pass to the fit method.
+
+        Returns
+        -------
+        X_new : array-like, shape (n_samples, n_features)
+            Transformed data.
+
+        """
+        Z = check_array(X, copy=True)
+
+        # Fit and transform all destructors
+        destructors = []
+        for i, d in enumerate(self._get_destructor_iterable()):
+            Z = self._single_fit_transform(d, Z, y)
+            destructors.append(d)
+            print(f"Iteration: {i}")
             if np.any(np.isnan(Z)):
                 raise RuntimeError("Need to check")
 
