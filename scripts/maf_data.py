@@ -169,7 +169,7 @@ def _get_mnist_raw():
     data_obj = None
     for i in range(n_attempts):
         try:
-            data_obj = fetch_openml("MNIST original", data_home=_DOWNLOAD_DIR)
+            data_obj = fetch_openml("mnist_784", data_home=_DOWNLOAD_DIR)
         except (ConnectionResetError, urllib.error.HTTPError):
             _download_from_other_source()
             if i == n_attempts - 1:
@@ -379,7 +379,7 @@ def _save_mnist_recreation_indices():
         maf_train, maf_val, maf_test = pickle.load(f)
 
     # Import raw mnist data
-    data_obj = fetch_openml("MNIST original")  # , data_home=custom_data_home)
+    data_obj = fetch_openml("mnist_784")  # , data_home=custom_data_home)
 
     # Prepare comparison matrices
     X_all = data_obj.data / 256.0
@@ -444,7 +444,7 @@ def _save_mnist_recreation_indices():
     with gzip.open(gzip_file, "w+") as f:
         f.write(
             "# Indices of MNIST dataset retrieved using "
-            "sklearn.datasets.fetch_openml('MNIST original') that correspond to the train, "
+            "sklearn.datasets.fetch_openml('mnist_784') that correspond to the train, "
             "validation and test sets of the MAF paper (one line each).\n"
         )
         for i, idx in enumerate([train_idx, val_idx, test_idx]):
