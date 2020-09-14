@@ -1,6 +1,7 @@
 """Deep destructors module."""
 from __future__ import division, print_function
 
+from typing import List
 import collections
 import logging
 import warnings
@@ -11,8 +12,7 @@ import numpy as np
 from sklearn.base import clone
 from sklearn.model_selection import check_cv
 from sklearn.utils.validation import check_array, check_X_y
-from .information import information_reduction
-import seaborn as sns
+from .information import information_reduction, condition
 
 # noinspection PyProtectedMember
 from .base import (
@@ -23,160 +23,6 @@ from .base import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class DeepDestructorIT(CompositeDestructor):
-    """Destructor formed by composing copies of some atomic destructor.
-
-    This destructor creates a dynamic composite destructor that includes an
-    optional initial destructor (parameter `init_destructor`) followed by
-    multiple copies of a canonical destructor (parameter
-    `canonical_destructor`). The `init_destructor` is often used for
-    preprocessing steps such as standardization.
-
-    If the training data's domain/support is not the unit hypercube,
-    an initial destructor is required---this initial destructor should have
-    a domain that matches the training data (by the definition of a
-    destructor, the range of the destructor is the unit hypercube and thus
-    the initial destructor will project the data onto the canonical domain.
-
-    This is a relatively thin wrapper around
-    :class:`~ddl.base.CompositeDestructor` that creates copies of the
-    canonical destructor to create a deep composite destructor with
-    destuctors (or "layers") that are similar in structure because they have
-    the same hyperparameters.
-
-    See Also
-    --------
-    DeepDestructorCV
-        A deep destructor whose number of destructors/layers is chosen
-        automatically based on cross-validation test likelihood.
-
-    ddl.base.CompositeDestructor
-
-    Parameters
-    ----------
-    canonical_destructor : estimator or list
-        The canonical destructor(s) that will be cloned to build up a deep
-        destructor. Parameter `canonical_destructor` can be a list of
-        canonical destructors. The list will be cycled through to get as
-        many canonical destructors as needed.
-
-    init_destructor : estimator, optional
-        Initial destructor (e.g. preprocessing or just to project to
-        canonical domain).
-
-    n_canonical_destructors : int, default=1
-        Number of cloned canonical destructors to add to the deep
-        destructor.
-
-    random_state : int, RandomState instance or None, optional (default=None)
-        If int, `random_state` is the seed used by the random number
-        generator; If :class:`~numpy.random.RandomState` instance,
-        `random_state` is the random number generator; If None, the random
-        number generator is the :class:`~numpy.random.RandomState` instance
-        used by :mod:`numpy.random`.
-
-    Attributes
-    ----------
-    fitted_destructors_ : list
-        List of fitted (sub)destructors. See `fitted_destructors_` of
-        :class:`~ddl.base.CompositeDestructor`.
-
-    density_ : estimator
-        *Implicit* density of deep destructor.
-
-    """
-
-    # noinspection PyMissingConstructor
-    def __init__(
-        self,
-        canonical_destructor=None,
-        init_destructor=None,
-        n_canonical_destructors=1,
-        random_state=None,
-        base_dist="uniform",
-    ):
-
-        self.canonical_destructor = canonical_destructor
-        self.init_destructor = init_destructor
-        self.n_canonical_destructors = n_canonical_destructors
-        self.random_state = random_state
-        self.base_dist = base_dist
-        self.info_loss = []
-        self.n_transforms = len(canonical_destructor)
-
-    def _get_canonical_destructors(self):
-        """Get canonical destructors as list and handle single case.
-
-        If only a single one then wrap in a list.
-        """
-        if self.canonical_destructor is not None:
-            canonical_destructors = self.canonical_destructor
-        else:
-            canonical_destructors = IdentityDestructor()
-
-        # If single, then update to list
-        if len(np.array(canonical_destructors).shape) < 1:
-            canonical_destructors = [canonical_destructors]
-        return canonical_destructors
-
-    def _get_destructor_iterable(self):
-        destructors = []
-        if self.init_destructor is not None:
-            destructors.append(self.init_destructor)
-        destructors.extend(
-            _take(
-                cycle(self._get_canonical_destructors()), self.n_canonical_destructors
-            )
-        )
-        return np.array([clone(d) for d in destructors])
-
-    @_check_global_random_state
-    def fit_transform(self, X, y=None, **fit_params):
-        """Fit estimator to X and then transform X.
-
-        Parameters
-        ----------
-        X : array-like, shape (n_samples, n_features)
-            Training data, where `n_samples` is the number of samples and
-            `n_features` is the number of features.
-
-        y : None, default=None
-            Not used in the fitting process but kept for compatibility.
-
-        fit_params : dict, optional
-            Parameters to pass to the fit method.
-
-        Returns
-        -------
-        X_new : array-like, shape (n_samples, n_features)
-            Transformed data.
-
-        """
-        Z = check_array(X, copy=True)
-
-        # Fit and transform all destructors
-        destructors = []
-        it_loss_f = partial(information_reduction, X=Z)
-        for i, d in enumerate(self._get_destructor_iterable()):
-            Z = self._single_fit_transform(d, Z, y)
-            # print(Z.shape)
-            destructors.append(d)
-            # res = np.sum((old_Z - Z))
-            if i % self.n_transforms == 1:
-                it = it_loss_f(Y=Z)
-                # sns.jointplot(x=Z[:, 0], y=Z[:, 1], kind="hex", color="red")
-                it_loss_f = partial(information_reduction, X=Z)
-                # print(f"Iteration: {i//3 + 1}")
-                # print(f"Info: {it:.8f}")
-                self.info_loss.append(it)
-            if np.any(np.isnan(Z)):
-                raise RuntimeError("Need to check")
-
-        self.fitted_destructors_ = np.array(destructors)
-        self.density_ = create_implicit_density(self)
-        return Z
 
 
 class DeepDestructor(CompositeDestructor):
@@ -699,6 +545,205 @@ class DeepDestructorCV(DeepDestructor):
                 yield clone(d)
 
         return _destructor_generator()
+
+
+class DeepDestructorIT(CompositeDestructor):
+    """Deep destructor whose number of destructors/layers is determined by Total Correlation.
+
+    Nearly the same as `DeepDestructor` and to some extend
+    `DeepDestructorCV` except that the number of canonical destructors
+    (i.e. the number of layers) is automatically determined using the difference
+    in the total correlation (multi-variate mutual information) between each
+    layer. As the latent space because more and more Gaussian, there will
+    be a convergence in the amount of density that has been destroyed
+    between layers.
+
+    This destructor is computationally more efficient than using
+    :class:`DeepDestructorCV` because the deep destructor is built one layer
+    at a time without needing to do any cross-validation.
+
+    **Note**: One key difference is that "1 layer" is composite of
+    transformations. So all of the transformations in the
+    `canonical_destructor` parameter is considered a single layer and
+    the total correlation is calculated after each transformation
+    within the `canonical_destructor`.
+
+    See Also
+    --------
+    DeepDestructorCV
+        A deep destructor whose number of destructors/layers is chosen
+        automatically based on cross-validation test likelihood.
+
+    ddl.base.CompositeDestructor
+
+    Parameters
+    ----------
+    canonical_destructor : estimator or list
+        The canonical destructor(s) that will be cloned to build up a deep
+        destructor. Parameter `canonical_destructor` can be a list of
+        canonical destructors. The list will be cycled through to get as
+        many canonical destructors as needed.
+
+    init_destructor : estimator, optional
+        Initial destructor (e.g. preprocessing or just to project to
+        canonical domain).
+
+    n_canonical_destructors : int, default=1
+        Number of cloned canonical destructors to add to the deep
+        destructor.
+
+    random_state : int, RandomState instance or None, optional (default=None)
+        If int, `random_state` is the seed used by the random number
+        generator; If :class:`~numpy.random.RandomState` instance,
+        `random_state` is the random number generator; If None, the random
+        number generator is the :class:`~numpy.random.RandomState` instance
+        used by :mod:`numpy.random`.
+
+    base_dist : str, (default="gaussian")
+        the base distribution of the latent space. This is used to calculate
+        the `score` and `score_samples` methods.
+
+    tol_layers : int, (default=15)
+        the number of layers allowed to be zero representing the change in marginal
+        entropy with each iteration. A higher tolerance will result in a more
+        Gaussian latent space.
+
+    threshhold : float, (default=0.25)
+        the p-value used to assess if the marginal information between
+        layers is 0. A lower tolerance will result in more layers as it
+        allows much smaller differences of marginal entropy whereas a higher
+        p-value will result in less layers as it will ignore bigger
+        differences between marginal entropy.
+
+    Attributes
+    ----------
+    fitted_destructors_ : list
+        List of fitted (sub)destructors. See `fitted_destructors_` of
+        :class:`~ddl.base.CompositeDestructor`.
+
+    density_ : estimator
+        *Implicit* density of deep destructor.
+
+    n_canonical_destructors : int
+        the number of destructors in the iterable `canonical_destructors`
+
+
+    """
+
+    # noinspection PyMissingConstructor
+    def __init__(
+        self,
+        canonical_destructor=None,
+        init_destructor=None,
+        random_state=None,
+        base_dist="gaussian",
+        tol_layers=10,
+        threshhold: float = 0.25,
+    ):
+
+        self.canonical_destructor = canonical_destructor
+        self.init_destructor = init_destructor
+        self.n_canonical_destructors = len(canonical_destructor)
+        self.random_state = random_state
+        self.base_dist = base_dist
+        self.tol_layers = tol_layers
+        self.threshhold = threshhold
+
+    def _get_canonical_destructors(self):
+        """Get canonical destructors as list and handle single case.
+
+        If only a single one then wrap in a list.
+        """
+        if self.canonical_destructor is not None:
+            canonical_destructors = self.canonical_destructor
+        else:
+            canonical_destructors = IdentityDestructor()
+
+        # If single, then update to list
+        if len(np.array(canonical_destructors).shape) < 1:
+            canonical_destructors = [canonical_destructors]
+        return canonical_destructors
+
+    def _get_destructor_iterable(self):
+        destructors = []
+        if self.init_destructor is not None:
+            destructors.append(self.init_destructor)
+        destructors.extend(
+            _take(
+                cycle(self._get_canonical_destructors()),
+                self.n_canonical_destructors,
+            )
+        )
+        return np.array([clone(d) for d in destructors])
+
+    @_check_global_random_state
+    def fit_transform(self, X, y=None, **fit_params):
+        """Fit estimator to X and then transform X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Training data, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        y : None, default=None
+            Not used in the fitting process but kept for compatibility.
+
+        fit_params : dict, optional
+            Parameters to pass to the fit method.
+
+        Returns
+        -------
+        X_new : array-like, shape (n_samples, n_features)
+            Transformed data.
+
+        """
+        Z = check_array(X, copy=True)
+
+        # Fit and transform all destructors
+        destructors = []
+        # it_loss_f = partial(information_reduction, X=Z)
+        self.info_loss = []
+        n_layers = 0
+        # print(len(self._get_destructor_iterable()))
+        # print(f"Condition: {condition(self.info_loss, self.tol_layers, n_layers)}")
+
+        while condition(self.info_loss, self.tol_layers, n_layers):
+            # partially fit function
+            it_loss_f = partial(information_reduction, X=Z, p=self.threshhold)
+
+            # do the transformation
+            Z, destructors = self._block_fit_transform(
+                destructors=destructors,
+                X=Z,
+                y=y,
+            )
+
+            # compute information content
+            self.info_loss.append(it_loss_f(Y=Z))
+
+            # increment block layers
+            n_layers += 1
+
+            if np.any(np.isnan(Z)):
+                raise RuntimeError("Need to check")
+
+        self.fitted_destructors_ = np.array(destructors)
+        self.density_ = create_implicit_density(self)
+        self.n_layers = n_layers
+        return Z
+
+    def _block_fit_transform(
+        self, destructors: List, X: np.ndarray, y: np.ndarray = None
+    ):
+
+        for d in self._get_destructor_iterable():
+            X = self._single_fit_transform(d, X, y)
+            destructors.append(d)
+        return X, destructors
+
+    def total_corr(self, base: int = 2) -> float:
+        return np.sum(self.info_loss) * np.log(base)
 
 
 def _take(iterable, n):

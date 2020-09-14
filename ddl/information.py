@@ -46,26 +46,6 @@ def histogram_entropy(data, base=2):
     return S + correction + np.log2(delta)
 
 
-# def entropy(pk: np.ndarray, base: int = 2) -> np.ndarray:
-#     """calculate the entropy
-
-#     Notes
-#     -----
-#     Source of this module is the scipy entropy
-#     module which can be found - shorturl.at/pyABR
-#     """
-#     # calculate entropy
-#     vec = jax.scipy.special.entr(pk)
-
-#     # sum all values
-#     S = np.sum(vec)
-
-#     # change base
-#     S /= np.log(base)
-
-#     return S
-
-
 def get_tolerance_dimensions(n_samples: int):
     xxx = np.logspace(2, 8, 7)
     yyy = np.array([0.1571, 0.0468, 0.0145, 0.0046, 0.0014, 0.0001, 0.00001])
@@ -131,3 +111,13 @@ def information_reduction(X: np.ndarray, Y: np.ndarray, p: float = 0.25) -> floa
     #     tol_info < np.sqrt(n_dimensions * p * tol_dimensions ** 2), delta_info < 0
     # )
     # return np.where(cond, 0.0, delta_info)
+
+
+def condition(info_loss: np.ndarray, tol_layers: int, n_layers: int) -> float:
+
+    if n_layers < tol_layers:
+        return True
+    else:
+        layers = info_loss[-tol_layers:]
+        info = np.sum(np.abs(layers))
+        return info > 0.0

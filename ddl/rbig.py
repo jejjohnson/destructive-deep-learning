@@ -1,23 +1,79 @@
+from typing import Union, Dict, Optional
 import numpy as np
-from sklearn.base import BaseEstimator, TransformerMixin, clone
-from ddl.independent import (
+from sklearn.base import BaseEstimator
+from .independent import (
     IndependentDensity,
     IndependentDestructor,
     IndependentInverseCdf,
 )
-from ddl.linear import LinearProjector
-from ddl.base import CompositeDestructor
-from ddl.deep import DeepDestructor, DeepDestructorCV
+from .linear import LinearProjector, RandomOrthogonalEstimator
+from .deep import DeepDestructorIT
 from sklearn.decomposition import PCA
-from ddl.univariate import HistogramUnivariateDensity
+from .univariate import HistogramUnivariateDensity
 
 
-def get_rbig_model(bins="auto", bounds=0.1, alpha=1e-10):
+def get_rbig_model(
+    bins: Union[str, int] = "auto",
+    bounds: Union[int, float] = 0.1,
+    alpha: float = 1e-10,
+    rotation: str = "pca",
+    rotation_kwargs: Dict = {},
+    tol_layers: int = 15,
+    threshhold: float = 0.25,
+    random_state: Optional[int] = 123,
+) -> BaseEstimator:
+    """Rotation-Based Iterative Gaussianization (RBIG).
+    This algorithm learns the function transforms any multidimensional data into
+    a Gaussian distribution. Just like other density destructors here, once the
+    transformation is learned, you can sample and calculate probabilities. Due to
+    the formulation of RBIG, we have access to some information theoretic
+    measures such as total correlation, entropy and multivariate mutual information.
 
-    # ================================ #
+    Parameters
+    ----------
+    bins : int or sequence of scalars or str, (default='auto')
+        Same ase the parameter of :func:`numpy.histogram`.
+
+
+
+    bounds : float or array-like of shape (2,), (default=0.1)
+        Specification for the finite bounds of the histogram. Bounds can be
+        percentage extension or a specified interval [a,b].
+
+    alpha : float
+        Regularization parameter corresponding to the number of
+        pseudo-counts to add to each bin of the histogram. This can be seen
+        as putting a Dirichlet prior on the empirical bin counts with
+        Dirichlet parameter alpha.
+
+    rotation_type : str, (default='pca')
+        The rotation applied to the marginally Gaussian-ized data at each iteration.
+        - 'pca'     : a principal components analysis rotation (PCA)
+        - 'random'  : random rotations
+
+    rotation_kwargs : dict, optional (default=None)
+        Any extra keyword arguments that you want to pass into the rotation
+        algorithms (i.e. ICA or PCA). See the respective algorithms on
+        scikit-learn for more details.
+
+    tol_layers : int, (default=15)
+        the number of layers allowed to be zero representing the change in marginal
+        entropy with each iteration. A higher tolerance will result in a more
+        Gaussian latent space.
+
+    threshhold : float, (default=0.25)
+        the p-value used to assess if the marginal information between
+        layers is 0. A lower tolerance will result in more layers as it
+        allows much smaller differences of marginal entropy whereas a higher
+        p-value will result in less layers as it will ignore bigger
+        differences between marginal entropy.
+
+    random_state : int, optional (default=123)
+        Control the seed for any randomization that occurs in this algorithm.
+    """
+    # ==================================
     # Step I - Marginal Uniformization
-    # ================================ #
-
+    # ==================================
     # Choose the Histogram estimator that converts the data X to uniform U(0,1)
     univariate_estimator = HistogramUnivariateDensity(
         bounds=bounds, bins=bins, alpha=alpha
@@ -31,149 +87,38 @@ def get_rbig_model(bins="auto", bounds=0.1, alpha=1e-10):
     # Creates "Destructor" D_theta_1
     uniform_density = IndependentDestructor(marginal_uniformization)
 
-    # ================================== #
+    # ===================================
     # Step II - Marginal Gaussianization
-    # ================================== #
+    # ===================================
 
     # Choose destructor D_theta_2 that converts data
     marginal_gaussianization = IndependentInverseCdf()
 
-    # =================== #
+    # ======================================
     # Step III - Rotation
-    # =================== #
+    # ======================================
 
-    # Choose a linear projection to rotate the features (PCA) "D_theta_3"
-    rotation = LinearProjector(linear_estimator=PCA())
-
-    # ==================== #
-    # Composite Destructor
-    # ==================== #
-
-    # Composite Destructor
-    rbig_model = CompositeDestructor(
-        [
-            clone(uniform_density),  # Marginal Uniformization
-            clone(marginal_gaussianization),  # Marginal Gaussianization
-            clone(rotation),  # Rotation (PCA)
-        ]
-    )
-
-    return rbig_model
-
-
-def get_deep_rbig_model(
-    n_layers=100, bins="auto", bounds=0.1, alpha=1e-10, random_state=123
-):
-
-    rbig_model = get_rbig_model(bins=bins, bounds=bounds, alpha=alpha)
-
-    # Initialize Deep RBIG model
-    deep_rbig_model = DeepDestructor(
-        canonical_destructor=rbig_model,
-        n_canonical_destructors=n_layers,
-        random_state=random_state,
-    )
-
-    return deep_rbig_model
-
-
-def get_rbig_cvmodel(
-    n_layers=50,
-    bins="auto",
-    bounds=0.1,
-    alpha=1e-10,
-    random_state=123,
-    init=None,
-    **kwargs
-):
-    if init is not None:
-        # Choose the Histogram estimator that converts the data X to uniform U(0,1)
-        univariate_estimator = HistogramUnivariateDensity(
-            bounds=bounds, bins=bins, alpha=alpha
+    # Choose a linear projection to rotate the features
+    if rotation.lower() == "pca":
+        linear_estimator = PCA(random_state=random_state, **rotation_kwargs)
+    elif rotation.lower() == "random":
+        linear_estimator = RandomOrthogonalEstimator(
+            random_state=random_state, **rotation_kwargs
         )
+    else:
+        raise ValueError(f"Unrecognized linear estimator: {rotation}")
+    rotation = LinearProjector(linear_estimator=linear_estimator)
 
-        # Marginally uses histogram estimator
-        marginal_uniformization = IndependentDensity(
-            univariate_estimators=univariate_estimator
-        )
-
-        # Creates "Destructor" D_theta_1
-        init = IndependentDestructor(marginal_uniformization)
-
-    deep_rbig_model = get_deep_rbig_model(
-        n_layers=n_layers,
-        bins=bins,
-        bounds=bounds,
-        alpha=alpha,
-        random_state=random_state,
+    # ======================================
+    # All Steps - Deep Density Destructor
+    # ======================================
+    # rbig_block = CompositeDestructor(
+    #     destructors=
+    # )
+    rbig_flow = DeepDestructorIT(
+        canonical_destructor=[uniform_density, marginal_gaussianization, rotation],
+        base_dist="gaussian",
+        tol_layers=tol_layers,
+        threshhold=threshhold,
     )
-
-    # Initialize Deep RBIG CV Model
-    deep_rbig_cvmodel = DeepDestructorCV(
-        init_destructor=clone(init), canonical_destructor=deep_rbig_model, **kwargs
-    )
-    return deep_rbig_cvmodel
-
-
-def get_rbig_cmodel(bins="auto", bounds=0.1, alpha=1e-10):
-    # ================================ #
-    # Step I - Marginal Uniformization
-    # ================================ #
-
-    # Choose the Histogram estimator that converts the data X to uniform U(0,1)
-    univariate_estimator = HistogramUnivariateDensity(
-        bounds=bounds, bins=bins, alpha=alpha
-    )
-
-    # Marginally uses histogram estimator
-    marginal_uniformization = IndependentDensity(
-        univariate_estimators=univariate_estimator
-    )
-
-    # Creates "Destructor" D_theta_1
-    uniform_density = IndependentDestructor(marginal_uniformization)
-
-    # ================================== #
-    # Step II - Marginal Gaussianization
-    # ================================== #
-
-    # Choose destructor D_theta_2 that converts data
-    marginal_gaussianization = IndependentInverseCdf()
-
-    # =================== #
-    # Step III - Rotation
-    # =================== #
-
-    # Choose a linear projection to rotate the features (PCA) "D_theta_3"
-    rotation = LinearProjector(linear_estimator=PCA())
-
-    # ==================== #
-    # Composite Destructor
-    # ==================== #
-
-    # Composite Destructor
-    rbig_model = CompositeDestructor(
-        [
-            clone(marginal_gaussianization),  # Marginal Gaussianization
-            clone(rotation),  # Rotation (PCA)
-            clone(uniform_density),  # Marginal Uniformization
-        ]
-    )
-
-    return rbig_model
-
-
-def get_deep_rbig_cmodel(
-    n_layers=100, bins="auto", bounds=0.1, alpha=1e-10, random_state=123
-):
-
-    rbig_cmodel = get_rbig_cmodel(bins=bins, bounds=bounds, alpha=alpha)
-
-    # Initialize Deep RBIG model
-    deep_rbig_model = DeepDestructor(
-        canonical_destructor=rbig_cmodel,
-        n_canonical_destructors=n_layers,
-        random_state=random_state,
-    )
-
-    return deep_rbig_model
+    return rbig_flow

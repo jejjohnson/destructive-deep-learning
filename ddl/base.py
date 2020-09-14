@@ -1514,14 +1514,13 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
             return np.sum(
                 self.score_samples_layers(X, y, partial_idx=partial_idx), axis=1
             )
-        else:
-            return -(
-                stats.norm.logpdf(X).sum(axis=1)
-                + np.sum(
-                    self.score_samples_layers(X, y, partial_idx=partial_idx),
-                    axis=1,
-                )
+        elif self.base_dist == "gaussian":
+            return stats.norm.logpdf(X).sum(axis=1) + np.sum(
+                self.score_samples_layers(X, y, partial_idx=partial_idx),
+                axis=1,
             )
+        else:
+            raise ValueError(f"Unrecognized base dist: {self.base_dist}")
 
     def score_samples_layers(self, X, y=None, partial_idx=None):
         """[Placeholder].
