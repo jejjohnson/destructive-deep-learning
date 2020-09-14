@@ -80,5 +80,5 @@ docs/generated
 
 \pics/
 \wandb/
-*.vscode
+*settings.json
 \.vscode/
