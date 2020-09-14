@@ -77,3 +77,8 @@ docs/generated
 ._*
 .Spotlight-V100
 .Trashes
+
+\pics/
+\wandb/
+*.vscode
+\.vscode/
