@@ -9,7 +9,7 @@ import numpy
 from Cython.Build import cythonize
 from numpy.distutils.core import setup
 from numpy.distutils.misc_util import Configuration
-from sklearn.externals.six.moves import urllib
+from six.moves import urllib
 
 
 def build_mlpack():
