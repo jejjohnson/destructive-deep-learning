@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.abspath('..')) # noqa E402
 # Import package and create api file in generated
 # isort:imports-firstparty
 import ddl
+
 from create_api import create_api_rst
 
 

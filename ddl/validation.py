@@ -16,7 +16,7 @@ from .utils import (check_domain, check_X_in_interval, get_domain_or_default,
                     get_support_or_default, has_method)
 
 try:
-    from sklearn.exceptions import SkipTestWarning, DataConversionWarning
+    from sklearn.exceptions import DataConversionWarning, SkipTestWarning
     from sklearn.utils.estimator_checks import check_estimator
 except ImportError:
     warnings.warn('Could not import sklearn\'s SkipTestWarning, '

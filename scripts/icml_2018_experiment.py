@@ -26,6 +26,7 @@ from ddl.linear import BestLinearReconstructionDestructor
 from ddl.local import FeatureGroupsDestructor, ImageFeaturePairs
 from ddl.tree import TreeDensity, TreeDestructor
 from ddl.univariate import HistogramUnivariateDensity, ScipyUnivariateDensity
+
 from maf_data import CIFAR10_ALPHA, MNIST_ALPHA, get_maf_data
 
 try:
