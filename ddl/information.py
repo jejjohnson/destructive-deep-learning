@@ -1,5 +1,7 @@
+from typing import Dict
 import numpy as np
 from scipy import stats
+from sklearn.base import BaseEstimator, clone
 
 
 def histogram_entropy(data, base=2):
@@ -121,3 +123,33 @@ def condition(info_loss: np.ndarray, tol_layers: int, n_layers: int) -> float:
         layers = info_loss[-tol_layers:]
         info = np.sum(np.abs(layers))
         return info > 0.0
+
+
+def mutual_info(
+    estimator: BaseEstimator, X: np.ndarray, Y: np.ndarray, base: int = 2
+) -> Dict[str, float]:
+    # ==================
+    # X Data
+    # ==================
+    x_rbig = clone(estimator)
+    # fit to data
+    X_trans = x_rbig.fit_transform(X)
+
+    # ==================
+    # Y Data
+    # ==================
+    y_rbig = clone(estimator)
+    # fit to data
+    Y_trans = y_rbig.fit_transform(Y)
+
+    # ==================
+    # XY Data
+    # ==================
+    xy_rbig = clone(estimator)
+    # fit to data
+    xy_rbig.fit(np.hstack([X_trans, Y_trans]))
+    return {
+        "total_corr_x": x_rbig.total_corr(base),
+        "total_corr_y": y_rbig.total_corr(base),
+        "mutual_info": xy_rbig.total_corr(base),
+    }
