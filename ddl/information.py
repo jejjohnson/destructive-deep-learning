@@ -115,16 +115,6 @@ def information_reduction(X: np.ndarray, Y: np.ndarray, p: float = 0.25) -> floa
     # return np.where(cond, 0.0, delta_info)
 
 
-def condition(info_loss: np.ndarray, tol_layers: int, n_layers: int) -> float:
-
-    if n_layers < tol_layers:
-        return True
-    else:
-        layers = info_loss[-tol_layers:]
-        info = np.sum(np.abs(layers))
-        return info > 0.0
-
-
 def mutual_info(
     estimator: BaseEstimator, X: np.ndarray, Y: np.ndarray, base: int = 2
 ) -> Dict[str, float]:

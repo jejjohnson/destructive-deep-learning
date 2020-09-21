@@ -1,7 +1,7 @@
 """Deep destructors module."""
 from __future__ import division, print_function
 
-from typing import List
+from typing import List, Optional
 import collections
 import logging
 import warnings
@@ -12,7 +12,9 @@ import numpy as np
 from sklearn.base import clone
 from sklearn.model_selection import check_cv
 from sklearn.utils.validation import check_array, check_X_y
-from .information import information_reduction, condition
+from .information import information_reduction
+from .stopping import condition as info_cond, negative_log_likelihood, diff_negentropy
+from .stopping import condition_stop as stop_cond
 
 # noinspection PyProtectedMember
 from .base import (
@@ -547,7 +549,7 @@ class DeepDestructorCV(DeepDestructor):
         return _destructor_generator()
 
 
-class DeepDestructorIT(CompositeDestructor):
+class DeepDestructorStop(CompositeDestructor):
     """Deep destructor whose number of destructors/layers is determined by Total Correlation.
 
     Nearly the same as `DeepDestructor` and to some extend
@@ -639,6 +641,8 @@ class DeepDestructorIT(CompositeDestructor):
         base_dist="gaussian",
         tol_layers=10,
         threshhold: float = 0.25,
+        stopping_crit: str = "info",
+        max_layers: Optional[int] = None,
     ):
 
         self.canonical_destructor = canonical_destructor
@@ -648,6 +652,8 @@ class DeepDestructorIT(CompositeDestructor):
         self.base_dist = base_dist
         self.tol_layers = tol_layers
         self.threshhold = threshhold
+        self.stopping_crit = stopping_crit
+        self.max_layers = max_layers
 
     def _get_canonical_destructors(self):
         """Get canonical destructors as list and handle single case.
@@ -703,47 +709,82 @@ class DeepDestructorIT(CompositeDestructor):
         # Fit and transform all destructors
         destructors = []
         # it_loss_f = partial(information_reduction, X=Z)
-        self.info_loss = []
+        self.loss = []
         n_layers = 0
+
+        # get stopping criteria
+        if self.stopping_crit == "info":
+            condition = partial(info_cond, tol_layers=self.tol_layers)
+        elif self.stopping_crit == "max":
+            condition = partial(stop_cond, tol_layers=self.max_layers)
+        else:
+            raise ValueError(f"Unrecognized stopping criteria: {self.stopping_crit}")
+
         # print(len(self._get_destructor_iterable()))
         # print(f"Condition: {condition(self.info_loss, self.tol_layers, n_layers)}")
-
-        while condition(self.info_loss, self.tol_layers, n_layers):
+        destructors = []
+        while condition(loss=self.loss, n_layers=n_layers):
             # partially fit function
-            it_loss_f = partial(information_reduction, X=Z, p=self.threshhold)
+            if self.stopping_crit == "info":
+                loss_f = partial(information_reduction, X=Z, p=self.threshhold)
+            else:
+                pass
 
             # do the transformation
-            Z, destructors = self._block_fit_transform(
-                destructors=destructors,
+            # if self.stopping_crit
+            Z, block_destructors = self._block_fit_transform(
                 X=Z,
                 y=y,
             )
 
-            # compute information content
-            self.info_loss.append(it_loss_f(Y=Z))
-
             # increment block layers
+            destructors = destructors + block_destructors
+
+            # compute information content
+            if self.stopping_crit == "info":
+                self.loss.append(loss_f(Y=Z))
+
+            elif self.stopping_crit == "max":
+                pass
+            else:
+                raise ValueError(
+                    f"Unrecognized stopping criteria: {self.stopping_crit}"
+                )
+
             n_layers += 1
 
             if np.any(np.isnan(Z)):
                 raise RuntimeError("Need to check")
-
+            if self.max_layers:
+                if n_layers >= self.max_layers:
+                    break
         self.fitted_destructors_ = np.array(destructors)
         self.density_ = create_implicit_density(self)
         self.n_layers = n_layers
         return Z
 
-    def _block_fit_transform(
-        self, destructors: List, X: np.ndarray, y: np.ndarray = None
-    ):
-
+    def _block_fit_transform(self, X: np.ndarray, y: np.ndarray = None):
+        destructors = []
         for d in self._get_destructor_iterable():
             X = self._single_fit_transform(d, X, y)
             destructors.append(d)
         return X, destructors
 
+    def _block_fit_transform_ldj(self, X: np.ndarray, y: np.ndarray = None):
+        destructors = []
+        for d in self._get_destructor_iterable():
+            X = self._single_fit_transform(d, X, y)
+            X_lprob = d.score(X)
+            destructors.append(d)
+        return X, X_lprob, destructors
+
     def total_corr(self, base: int = 2) -> float:
-        return np.sum(self.info_loss) * np.log(base)
+        if self.stopping_crit == "info":
+            return np.sum(self.loss) * np.log(base)
+        else:
+            raise ValueError(
+                f"Total correlation can only be calculated with 'info_loss' stopping criteria."
+            )
 
 
 def _take(iterable, n):

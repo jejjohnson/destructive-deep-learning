@@ -935,7 +935,7 @@ def _check_global_random_state(f):
     return decorated
 
 
-class CompositeDestructorIT(BaseEstimator, DestructorMixin):
+class CompositeDestructorBlock(BaseEstimator, DestructorMixin):
     """Meta destructor composed of multiple destructors.
 
     This meta destructor composes multiple destructors or other

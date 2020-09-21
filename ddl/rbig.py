@@ -7,7 +7,7 @@ from .independent import (
     IndependentInverseCdf,
 )
 from .linear import LinearProjector, RandomOrthogonalEstimator
-from .deep import DeepDestructorIT
+from .deep import DeepDestructorStop
 from sklearn.decomposition import PCA
 from .univariate import HistogramUnivariateDensity
 
@@ -21,6 +21,7 @@ def get_rbig_model(
     tol_layers: int = 15,
     threshhold: float = 0.25,
     random_state: Optional[int] = 123,
+    max_layers: Optional[int] = None,
 ) -> BaseEstimator:
     """Rotation-Based Iterative Gaussianization (RBIG).
     This algorithm learns the function transforms any multidimensional data into
@@ -115,10 +116,11 @@ def get_rbig_model(
     # rbig_block = CompositeDestructor(
     #     destructors=
     # )
-    rbig_flow = DeepDestructorIT(
+    rbig_flow = DeepDestructorStop(
         canonical_destructor=[uniform_density, marginal_gaussianization, rotation],
         base_dist="gaussian",
         tol_layers=tol_layers,
         threshhold=threshhold,
+        max_layers=max_layers,
     )
     return rbig_flow
