@@ -1365,7 +1365,6 @@ class CompositeDestructor(BaseEstimator, DestructorMixin):
         for i, d in enumerate(self._get_destructor_iterable()):
             Z = self._single_fit_transform(d, Z, y)
             destructors.append(d)
-
             if np.any(np.isnan(Z)):
                 raise RuntimeError("Need to check")
 
