@@ -8,31 +8,48 @@ import numpy as np
 import scipy.stats
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import DataConversionWarning, NotFittedError
-from sklearn.utils.validation import check_array, check_is_fitted, check_random_state, column_or_1d
-
+from sklearn.utils.validation import (
+    check_array,
+    check_is_fitted,
+    check_random_state,
+    column_or_1d,
+)
+from .utils import get_support_reference
 from .base import BoundaryWarning, ScoreMixin
+import statsmodels.api as sm
+
 # noinspection PyProtectedMember
-from .utils import (_DEFAULT_SUPPORT, check_X_in_interval, make_finite, make_interior,
-                    make_interior_probability, make_positive)
+from .utils import (
+    _DEFAULT_SUPPORT,
+    check_X_in_interval,
+    make_finite,
+    make_interior,
+    make_interior_probability,
+    make_positive,
+)
 
 logger = logging.getLogger(__name__)
 
-SCIPY_RV_NON_NEGATIVE = ['expon', 'chi']
-SCIPY_RV_STRICLTY_POSITIVE = ['gamma', 'invgamma', 'chi2', 'lognorm']
-SCIPY_RV_UNIT_SUPPORT = ['rv_histgoram', 'uniform', 'beta']
+SCIPY_RV_NON_NEGATIVE = ["expon", "chi"]
+SCIPY_RV_STRICLTY_POSITIVE = ["gamma", "invgamma", "chi2", "lognorm"]
+SCIPY_RV_UNIT_SUPPORT = ["rv_histgoram", "uniform", "beta"]
 
 
 def _check_univariate_X(X, support, inverse=False):
-    X = check_array(X, ensure_2d=True)  # ensure_2d=True is default but just making explicit
+    X = check_array(
+        X, ensure_2d=True
+    )  # ensure_2d=True is default but just making explicit
     # Check that X is a column vector but first ravel because check_estimator passes
     #  a matrix to fit
     if X.shape[1] > 1:
-        warnings.warn(DataConversionWarning(
-            'Input should be column vector with shape (n, 1) but found matrix. Converting to '
-            'column vector via `np.mean(X, axis=1).reshape((-1, 1))`. '
-            'Ideally, this would raise an error but in order to pass the checks in '
-            '`sklearn.utils.check_estimator`, we convert the data rather than raise an error. '
-        ))
+        warnings.warn(
+            DataConversionWarning(
+                "Input should be column vector with shape (n, 1) but found matrix. Converting to "
+                "column vector via `np.mean(X, axis=1).reshape((-1, 1))`. "
+                "Ideally, this would raise an error but in order to pass the checks in "
+                "`sklearn.utils.check_estimator`, we convert the data rather than raise an error. "
+            )
+        )
         X = np.mean(X, axis=1).reshape((-1, 1))
 
     # Check that values are within support or range(inverse)
@@ -107,19 +124,23 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
             Returns the instance itself.
 
         """
+
         def _check_scipy_kwargs(kwargs, _scipy_rv):
             if kwargs is None:
                 if self._is_special(_scipy_rv, SCIPY_RV_UNIT_SUPPORT):
                     return dict(floc=0, fscale=1)
-                elif self._is_special(_scipy_rv,
-                                      SCIPY_RV_NON_NEGATIVE + SCIPY_RV_STRICLTY_POSITIVE):
+                elif self._is_special(
+                    _scipy_rv, SCIPY_RV_NON_NEGATIVE + SCIPY_RV_STRICLTY_POSITIVE
+                ):
                     return dict(floc=0)
                 else:
                     return {}
             elif isinstance(kwargs, dict):
                 return kwargs
             else:
-                raise ValueError('`scipy_fit_kwargs` should be either None or a `dict` object.')
+                raise ValueError(
+                    "`scipy_fit_kwargs` should be either None or a `dict` object."
+                )
 
         # Input validation
         scipy_rv = self._get_scipy_rv_or_default()
@@ -127,21 +148,27 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
         X = self._check_X(X)
 
         # MLE fit based on scipy implementation
-        if scipy_rv.numargs == 0 and 'floc' in scipy_fit_kwargs and 'fscale' in scipy_fit_kwargs:
-            params = (scipy_fit_kwargs['floc'], scipy_fit_kwargs['fscale'])
+        if (
+            scipy_rv.numargs == 0
+            and "floc" in scipy_fit_kwargs
+            and "fscale" in scipy_fit_kwargs
+        ):
+            params = (scipy_fit_kwargs["floc"], scipy_fit_kwargs["fscale"])
         else:
             try:
                 params = scipy_rv.fit(X.ravel(), **scipy_fit_kwargs)
             except RuntimeError as e:
-                warnings.warn('Unable to fit to data using scipy_rv so attempting to use default '
-                              'parameters for the distribution. Original error:\n%s' % str(e))
+                warnings.warn(
+                    "Unable to fit to data using scipy_rv so attempting to use default "
+                    "parameters for the distribution. Original error:\n%s" % str(e)
+                )
                 params = self._get_default_params(scipy_rv)
             except ValueError:
                 # warnings.warn(
                 #     'Trying to use fixed parameters instead. Original error:\n%s' % str(e))
                 # try to extract fixed parameters in a certain order
                 params = []
-                for k in ['fa', 'f0', 'fb', 'f1', 'floc', 'fscale']:
+                for k in ["fa", "f0", "fb", "f1", "floc", "fscale"]:
                     try:
                         params.append(scipy_fit_kwargs.pop(k))
                     except KeyError:
@@ -163,9 +190,11 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
         try:
             self.rv_.rvs(1)
         except ValueError:
-            warnings.warn('Parameters discovered by fit are not in the domain of the '
-                          'parameters so attempting to use default parameters for the '
-                          'distribution.')
+            warnings.warn(
+                "Parameters discovered by fit are not in the domain of the "
+                "parameters so attempting to use default parameters for the "
+                "distribution."
+            )
             self.rv_ = scipy_rv(*self._get_default_params(scipy_rv))
         return self
 
@@ -193,6 +222,7 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
             Fitted density.
 
         """
+        print("here!")
         density = cls(**kwargs)
 
         # Get default if scipy_rv=None
@@ -212,14 +242,15 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
 
     @classmethod
     def _get_default_params(cls, scipy_rv):
-        if cls._is_special(scipy_rv, ['beta']):
+        if cls._is_special(scipy_rv, ["beta"]):
             return [1, 1]
-        elif cls._is_special(scipy_rv, ['uniform', 'norm', 'expon', 'lognorm']):
+        elif cls._is_special(scipy_rv, ["uniform", "norm", "expon", "lognorm"]):
             return []  # Empty since no parameters needed
         else:
-            raise NotImplementedError('The distribution given by the `scipy_rv = %s` does not '
-                                      'have any associated default parameters.'
-                                      % str(scipy_rv))
+            raise NotImplementedError(
+                "The distribution given by the `scipy_rv = %s` does not "
+                "have any associated default parameters." % str(scipy_rv)
+            )
 
     def sample(self, n_samples=1, random_state=None):
         """Generate random samples from this density/destructor.
@@ -244,7 +275,9 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
         """
         self._check_is_fitted()
         rng = check_random_state(random_state)
-        return np.array(self.rv_.rvs(size=n_samples, random_state=rng)).reshape((n_samples, 1))
+        return np.array(self.rv_.rvs(size=n_samples, random_state=rng)).reshape(
+            (n_samples, 1)
+        )
 
     def score_samples(self, X, y=None):
         """Compute log-likelihood (or log(det(Jacobian))) for each sample.
@@ -348,27 +381,41 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
 
         # Move away from support/domain boundaries if necessary
         if inverse and (np.any(X <= 0) or np.any(X >= 1)):
-            warnings.warn(BoundaryWarning(
-                'Some probability values (input to inverse functions) are either 0 or 1. Bounding '
-                'values away from 0 or 1 to avoid infinities in output.  For example, the inverse '
-                'cdf of a Gaussian at 0 will yield `-np.inf`.'))
+            warnings.warn(
+                BoundaryWarning(
+                    "Some probability values (input to inverse functions) are either 0 or 1. Bounding "
+                    "values away from 0 or 1 to avoid infinities in output.  For example, the inverse "
+                    "cdf of a Gaussian at 0 will yield `-np.inf`."
+                )
+            )
             X = make_interior_probability(X)
-        if self._is_special(scipy_rv, SCIPY_RV_UNIT_SUPPORT) and (np.any(X <= 0) or np.any(X >= 1)):
-            warnings.warn(BoundaryWarning(
-                'Input to random variable function has at least one value either 0 or 1 '
-                'but all input should be in (0,1) exclusive. Bounding values away from 0 or 1 by '
-                'eps=%g'))
+        if self._is_special(scipy_rv, SCIPY_RV_UNIT_SUPPORT) and (
+            np.any(X <= 0) or np.any(X >= 1)
+        ):
+            warnings.warn(
+                BoundaryWarning(
+                    "Input to random variable function has at least one value either 0 or 1 "
+                    "but all input should be in (0,1) exclusive. Bounding values away from 0 or 1 by "
+                    "eps=%g"
+                )
+            )
             X = make_interior_probability(X)
         if self._is_special(scipy_rv, SCIPY_RV_STRICLTY_POSITIVE) and np.any(X <= 0):
-            warnings.warn(BoundaryWarning(
-                'Input to random variable function has at least one value less than or equal to '
-                'zero but all input should be strictly positive. Making all input greater than or '
-                'equal to some small positive constant.'))
+            warnings.warn(
+                BoundaryWarning(
+                    "Input to random variable function has at least one value less than or equal to "
+                    "zero but all input should be strictly positive. Making all input greater than or "
+                    "equal to some small positive constant."
+                )
+            )
             X = make_positive(X)
         if np.any(np.isinf(X)):
-            warnings.warn(BoundaryWarning(
-                'Input to random variable function has at least one value that is `np.inf` or '
-                '`-np.inf`. Making all input finite via a very large constant.'))
+            warnings.warn(
+                BoundaryWarning(
+                    "Input to random variable function has at least one value that is `np.inf` or "
+                    "`-np.inf`. Making all input finite via a very large constant."
+                )
+            )
             X = make_finite(X)
         return X
 
@@ -386,23 +433,19 @@ class ScipyUnivariateDensity(BaseEstimator, ScoreMixin):
     def _is_special(scipy_rv, scipy_str_set):
         # Modify string set for special case of rv_histogram
         scipy_str_set = [
-            '.' + dstr + '_gen' if dstr != 'rv_histogram' else '.' + dstr
+            "." + dstr + "_gen" if dstr != "rv_histogram" else "." + dstr
             for dstr in scipy_str_set
         ]
-        return np.any([
-            dstr in str(scipy_rv)
-            for dstr in scipy_str_set
-        ])
+        return np.any([dstr in str(scipy_rv) for dstr in scipy_str_set])
 
     def _check_is_fitted(self):
-        check_is_fitted(self, ['rv_'])
+        check_is_fitted(self, ["rv_"])
 
 
 with warnings.catch_warnings():
-    warnings.filterwarnings('ignore', category=UserWarning)
+    warnings.filterwarnings("ignore", category=UserWarning)
     STANDARD_NORMAL_DENSITY = ScipyUnivariateDensity(
-        scipy_rv=scipy.stats.norm,
-        scipy_fit_kwargs=dict(floc=0, fscale=1)
+        scipy_rv=scipy.stats.norm, scipy_fit_kwargs=dict(floc=0, fscale=1)
     ).fit(np.array([[0]]))
 
 
@@ -513,23 +556,33 @@ class HistogramUnivariateDensity(ScipyUnivariateDensity):
 
         """
         if X is not None and histogram_params is not None:
-            raise ValueError('Either X or histogram_params can be provided (i.e. not None) '
-                             'but not both.')
+            raise ValueError(
+                "Either X or histogram_params can be provided (i.e. not None) "
+                "but not both."
+            )
         if histogram_params is not None:
             hist, bin_edges = histogram_params
-            warnings.warn(DeprecationWarning('Class factory method `create_fitted` should '
-                                             'be used instead of passing histogram_params '
-                                             'to fit.'))
+            warnings.warn(
+                DeprecationWarning(
+                    "Class factory method `create_fitted` should "
+                    "be used instead of passing histogram_params "
+                    "to fit."
+                )
+            )
         else:
             X = self._check_X(X)
             # Get percent extension but do not modify bounds
             bounds = self._check_bounds(X)
-            bins = self.bins if self.bins is not None else 'auto'
+            bins = self.bins if self.bins is not None else "auto"
 
             # Fit numpy histogram
             hist, bin_edges = np.histogram(X, bins=bins, range=bounds)
-            hist = np.array(hist, dtype=float)  # Make float so we can add non-integer alpha
-            hist += self.alpha  # Smooth histogram by alpha so no areas have 0 probability
+            hist = np.array(
+                hist, dtype=float
+            )  # Make float so we can add non-integer alpha
+            hist += (
+                self.alpha
+            )  # Smooth histogram by alpha so no areas have 0 probability
 
         # Normalize bins by bin_edges
         rv = self._hist_params_to_rv(hist, bin_edges)
@@ -601,20 +654,165 @@ class HistogramUnivariateDensity(ScipyUnivariateDensity):
         else:
             _domain = column_or_1d(self.bounds).copy()
             if _domain.shape[0] != 2:
-                raise ValueError('Domain should either be a two element array-like or a'
-                                 ' scalar indicating percentage extension of domain')
+                raise ValueError(
+                    "Domain should either be a two element array-like or a"
+                    " scalar indicating percentage extension of domain"
+                )
             return _domain
 
     def _check_X(self, X, inverse=False):
         X = super(HistogramUnivariateDensity, self)._check_X(X, inverse)
         bounds = self._check_bounds()
         if np.any(X <= bounds[0]) or np.any(X >= bounds[1]):
-            warnings.warn(BoundaryWarning(
-                'Input to random variable function has at least one value outside of bounds '
-                'but all input should be in (bounds[0], bounds[1]) exclusive. Bounding '
-                'values away from bounds[0] or bounds[1]'))
+            warnings.warn(
+                BoundaryWarning(
+                    "Input to random variable function has at least one value outside of bounds "
+                    "but all input should be in (bounds[0], bounds[1]) exclusive. Bounding "
+                    "values away from bounds[0] or bounds[1]"
+                )
+            )
             X = make_interior(X, bounds)
         return X
 
     def _get_scipy_rv_or_default(self):
         return scipy.stats.rv_histogram
+
+
+class KDEUnivariateDensity(BaseEstimator, ScoreMixin):
+    def __init__(
+        self,
+        grid_size: int = 50,
+        bw_method: str = "scott",
+        kernel="gau",
+        support_ext: float = 0.1,
+        fft: bool = False,
+    ) -> None:
+        self.grid_size = grid_size
+        self.bw_method = bw_method
+        self.kernel = kernel
+        self.support_ext = support_ext
+        self.fft = fft
+
+    def fit(self, X, y=None):
+        # initialize estimator
+        estimator = sm.nonparametric.KDEUnivariate(X.squeeze())
+
+        # fit estimator
+        estimator.fit(
+            kernel=self.kernel,
+            bw=self.bw_method,
+            gridsize=self.grid_size,
+            cut=self.support_ext,
+            fft=self.fft,
+        )
+        self.estimator_ = estimator
+        self.hbins_ = estimator.support
+        self.hpdf_ = estimator.density
+        self.hcdf_ = estimator.cdf
+
+        return self
+
+    def pdf(self, X, y=None):
+        self._check_is_fitted()
+        return self.estimator_.evaluate(X.squeeze())
+
+    def logpdf(self, X, y=None):
+        self._check_is_fitted()
+        return np.log(self.pdf(X.squeeze(), y))
+
+    def cdf(self, X, y=None):
+        self._check_is_fitted()
+        return np.interp(X.squeeze(), self.hbins_, self.hcdf_)
+
+    def inverse_cdf(self, X, y=None):
+        self._check_is_fitted()
+        return np.interp(X.squeeze(), self.hcdf_, self.hbins_)
+
+    def score_samples(self, X, y=None):
+        """Compute log-likelihood (or log(det(Jacobian))) for each sample.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            New data, where n_samples is the number of samples and n_features
+            is the number of features.
+
+        y : None, default=None
+            Not used but kept for compatibility.
+
+        Returns
+        -------
+        log_likelihood : array, shape (n_samples,)
+            Log likelihood of each data point in X.
+
+        """
+        self._check_is_fitted()
+        return self.logpdf(X.ravel()).reshape((-1, 1))
+
+    def sample(self, n_samples=1, random_state=None):
+        """Generate random samples from this density/destructor.
+
+        Parameters
+        ----------
+        n_samples : int, default=1
+            Number of samples to generate. Defaults to 1.
+
+        random_state : int, RandomState instance or None, optional (default=None)
+            If int, `random_state` is the seed used by the random number
+            generator; If :class:`~numpy.random.RandomState` instance,
+            `random_state` is the random number generator; If None, the random
+            number generator is the :class:`~numpy.random.RandomState` instance
+            used by :mod:`numpy.random`.
+
+        Returns
+        -------
+        X : array, shape (n_samples, n_features)
+            Randomly generated sample.
+
+        """
+        self._check_is_fitted()
+        rng = check_random_state(random_state)
+        samples = rng.rand(n_samples, 1)
+        return self.inverse_cdf(samples)
+
+    def _check_is_fitted(self):
+        check_is_fitted(self, ["hbins_"])
+
+
+class KDEUnivariateDensityInterp(KDEUnivariateDensity):
+    def __init__(
+        self,
+        grid_size: int = 50,
+        bw_method: str = "scott",
+        kernel="gau",
+        support_ext: float = 0.1,
+        fft: bool = False,
+    ) -> None:
+        self.grid_size = grid_size
+        self.bw_method = bw_method
+        self.kernel = kernel
+        self.support_ext = support_ext
+        self.fft = fft
+
+    def fit(self, X, y=None):
+        # initialize estimator
+        estimator = sm.nonparametric.KDEUnivariate(X.squeeze())
+
+        # fit estimator
+        estimator.fit(
+            kernel=self.kernel,
+            bw=self.bw_method,
+            gridsize=self.grid_size,
+            cut=self.support_ext,
+            fft=self.fft,
+        )
+
+        self.hbins_ = estimator.support
+        self.hpdf_ = estimator.density
+        self.hcdf_ = estimator.cdf
+
+        return self
+
+    def pdf(self, X, y=None):
+        self._check_is_fitted()
+        return np.interp(X.squeeze(), self.hbins_, self.hpdf_)

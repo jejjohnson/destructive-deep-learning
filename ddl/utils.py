@@ -37,13 +37,14 @@ def get_support_or_default(density, warn=False):
         just return the default support.
 
     """
-    if has_method(density, 'get_support', warn=False):
+    if has_method(density, "get_support", warn=False):
         return density.get_support()
     else:
         if warn:
-            msg = ('Support is assumed to be %s since '
-                   'dens.get_support() is not implemented.'
-                   % str(_DEFAULT_SUPPORT))
+            msg = (
+                "Support is assumed to be %s since "
+                "dens.get_support() is not implemented." % str(_DEFAULT_SUPPORT)
+            )
             warnings.warn(msg)
         return _DEFAULT_SUPPORT
 
@@ -69,13 +70,14 @@ def get_domain_or_default(destructor, warn=False):
         just return the default domain.
 
     """
-    if has_method(destructor, 'get_domain', warn=False):
+    if has_method(destructor, "get_domain", warn=False):
         return destructor.get_domain()
     else:
         if warn:
-            msg = ('Domain is assumed to be %s since '
-                   'trans.get_domain() is not implemented.'
-                   % str(_DEFAULT_DOMAIN))
+            msg = (
+                "Domain is assumed to be %s since "
+                "trans.get_domain() is not implemented." % str(_DEFAULT_DOMAIN)
+            )
             warnings.warn(msg)
         return _DEFAULT_DOMAIN
 
@@ -109,12 +111,15 @@ def check_domain(domain, n_features):
     if len(domain.shape) == 1:
         domain = np.array([domain for i in range(n_features)])
     if np.any(np.isnan(domain)):
-        raise ValueError('The domain/support should not contain NaN values.')
+        raise ValueError("The domain/support should not contain NaN values.")
     if len(domain) != n_features:
-        warnings.warn(DataConversionWarning(
-            'Domain had %d dimensions but requested `n_features` was %d. Using `domain = '
-            'itertools.islice(itertools.cycle(domain), n_features)`.'
-            % (len(domain), n_features)))
+        warnings.warn(
+            DataConversionWarning(
+                "Domain had %d dimensions but requested `n_features` was %d. Using `domain = "
+                "itertools.islice(itertools.cycle(domain), n_features)`."
+                % (len(domain), n_features)
+            )
+        )
         domain = list(itertools.islice(itertools.cycle(domain), n_features))
     return domain
 
@@ -137,29 +142,38 @@ def check_X_in_interval(X, interval):
         shifting/scaling data as necessary to fit within specified interval.
 
     """
-    msg_suffix = ('Thus, the original values will be clipped to the given domain: '
-                  '%s.\n(Ideally, this would be an exception instead of a warning but the '
-                  'current implementation of `sklearn.utils.check_estimator` (sklearn version '
-                  '0.19.1) will fail if an exception is raised while calling fit, transform, '
-                  'etc.  Therefore, we only require that an warning is issued.)'
-                  % str(interval.tolist()))
+    msg_suffix = (
+        "Thus, the original values will be clipped to the given domain: "
+        "%s.\n(Ideally, this would be an exception instead of a warning but the "
+        "current implementation of `sklearn.utils.check_estimator` (sklearn version "
+        "0.19.1) will fail if an exception is raised while calling fit, transform, "
+        "etc.  Therefore, we only require that an warning is issued.)"
+        % str(interval.tolist())
+    )
     n_samples, n_features = np.shape(X)
     if n_samples == 0:
         return X  # Trivial case of no samples
     dom = check_domain(interval, n_features)
     copied = False
-    for i, (low_domain, high_domain), low, high in zip(range(n_features), dom, np.min(X, axis=0),
-                                                       np.max(X, axis=0)):
+    for i, (low_domain, high_domain), low, high in zip(
+        range(n_features), dom, np.min(X, axis=0), np.max(X, axis=0)
+    ):
         if low < low_domain:
-            warnings.warn(DataConversionWarning(
-                'The minimum of dimension %d is not in the interval: %g (X_min) < %g ('
-                'interval_min), diff = %g. %s'
-                % (i, low, low_domain, low-low_domain, msg_suffix)))
+            warnings.warn(
+                DataConversionWarning(
+                    "The minimum of dimension %d is not in the interval: %g (X_min) < %g ("
+                    "interval_min), diff = %g. %s"
+                    % (i, low, low_domain, low - low_domain, msg_suffix)
+                )
+            )
         if high > high_domain:
-            warnings.warn(DataConversionWarning(
-                'The maximum of dimension %d is not in the interval: %g (X_max) > %g ('
-                'interval_max), diff = %g. %s'
-                % (i, high, high_domain, high-high_domain, msg_suffix)))
+            warnings.warn(
+                DataConversionWarning(
+                    "The maximum of dimension %d is not in the interval: %g (X_max) > %g ("
+                    "interval_max), diff = %g. %s"
+                    % (i, high, high_domain, high - high_domain, msg_suffix)
+                )
+            )
         # Rescale values if either too low or too high
         if low < low_domain or high > high_domain:
             if not copied:
@@ -172,6 +186,7 @@ def check_X_in_interval(X, interval):
 
 def check_X_in_interval_decorator(func):
     """Decorate functions such as `transform` to check domain."""
+
     def wrapper(trans, X, *args, **kwargs):
         """[Placeholder].
 
@@ -217,16 +232,20 @@ def has_method(est, method_name, warn=True):
         return True
     elif hasattr(est, method_name) and not callable(getattr(est, method_name)):
         raise TypeError(
-            'While %s has the attribute %s, it is not callable (i.e. it is not a method).'
-            % (est.__class__, method_name))
+            "While %s has the attribute %s, it is not callable (i.e. it is not a method)."
+            % (est.__class__, method_name)
+        )
     elif not hasattr(est, method_name):
         if warn:
             warnings.warn(
-                '%s does not have the specified attribute/method `%s` so skipping tests that '
-                'require method `%s`.' % (est.__class__, method_name, method_name))
+                "%s does not have the specified attribute/method `%s` so skipping tests that "
+                "require method `%s`." % (est.__class__, method_name, method_name)
+            )
         return False
     else:
-        raise NotImplementedError('Must have missed a logical case---bug in this function.')
+        raise NotImplementedError(
+            "Must have missed a logical case---bug in this function."
+        )
 
 
 def make_finite(X):
@@ -286,7 +305,7 @@ def make_interior_probability(X, eps=None):
     X = _check_floating(X)
     if eps is None:
         eps = np.finfo(X.dtype).eps
-    return np.minimum(np.maximum(X, eps), 1-eps)
+    return np.minimum(np.maximum(X, eps), 1 - eps)
 
 
 def make_interior(X, bounds, eps=None):
@@ -319,3 +338,32 @@ def _check_floating(X):
     if not np.issubdtype(X.dtype, np.floating):
         X = np.array(X, dtype=np.float)
     return X
+
+
+def get_domain_extension(
+    data,
+    extension,
+):
+    if isinstance(extension, float):
+        pass
+    elif isinstance(extension, int):
+        extension /= 100
+    else:
+        raise ValueError(f"Unrecognized type extension: {type(extension)}")
+
+    domain = np.abs(data.max() - data.min())
+
+    domain_ext = extension * domain
+
+    lower_bound = data.min() - domain_ext
+    upper_bound = data.max() + domain_ext
+
+    return lower_bound, upper_bound
+
+
+def get_support_reference(support: np.ndarray, extension, n_quantiles=1_000):
+    lb, ub = get_domain_extension(support, extension)
+
+    new_support = np.linspace(lb, ub, n_quantiles, endpoint=True)
+
+    return new_support
