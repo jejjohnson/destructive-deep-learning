@@ -101,9 +101,8 @@ def information_reduction(X: np.ndarray, Y: np.ndarray, p: float = 0.25) -> floa
     n_samples, n_dimensions = X.shape
     tol_dimensions = get_tolerance_dimensions(n_samples)
 
-    p = 0.25
     if II < np.sqrt(n_dimensions * p * tol_dimensions ** 2) or I < 0:
-        I = 0
+        I = 0.0
 
     return I
     # tol_dimensions = get_tolerance_dimensions(n_samples)
