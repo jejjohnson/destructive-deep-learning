@@ -682,7 +682,7 @@ class KDEUnivariateDensity(BaseEstimator, ScoreMixin):
     def __init__(
         self,
         grid_size: int = 50,
-        bw_method: str = "scott",
+        bw_method: str = "normal_reference",
         kernel="gau",
         support_ext: float = 0.1,
         fft: bool = False,
